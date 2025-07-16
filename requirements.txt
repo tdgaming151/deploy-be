@@ -1,7 +1,8 @@
-Flask
-flask-cors
-python-dotenv
-numpy
-pillow
-spacy
-en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.1.0/en_core_web_sm-3.1.0.tar.gz
+Flask==3.1.1
+Flask-Cors==6.0.1
+python-dotenv==1.1.0
+tensorflow==2.10.1
+pillow==9.5.0
+numpy==1.26.4
+spacy==3.8.4
+scikit-learn==1.6.1
