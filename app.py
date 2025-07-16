@@ -380,26 +380,37 @@ disease_list = [
 ]
 
 import os
+import pickle
 from flask import Flask, request, jsonify, abort
 from flask_cors import CORS
+from pymongo import MongoClient
+from pymongo.errors import ServerSelectionTimeoutError
+from bson import ObjectId
 from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing.image import img_to_array
 from dotenv import load_dotenv
 from PIL import Image
 import numpy as np
 import io
-import pickle
 
 # ─── Load ENV ────────────────────────────────────────────────────────────────
 load_dotenv()
+MONGO_URI = os.getenv('MONGO_URI')
 FLASK_SECRET_KEY = os.getenv('FLASK_SECRET_KEY')
-if not FLASK_SECRET_KEY:
-    raise RuntimeError("Missing FLASK_SECRET_KEY")
+if not MONGO_URI or not FLASK_SECRET_KEY:
+    raise RuntimeError("Missing MONGO_URI or FLASK_SECRET_KEY")
 
-# ─── Flask Setup ─────────────────────────────────────────────────────────────
+# ─── Flask + Mongo Setup ─────────────────────────────────────────────────────
 app = Flask(__name__)
 app.config['SECRET_KEY'] = FLASK_SECRET_KEY
-CORS(app)
+CORS(app, origins=["*"])
+try:
+    client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+    client.admin.command('ping')
+except ServerSelectionTimeoutError:
+    raise RuntimeError("Failed to connect to MongoDB")
+db = client['meddb']
+drugs_collection = db.drugs
 
 # ─── Load Your ML Artifacts ───────────────────────────────────────────────────
 # Text-based disease prediction
@@ -421,7 +432,7 @@ from spacy.matcher import Matcher
 # Load English model
 nlp = spacy.load("en_core_web_sm")
 matcher = Matcher(nlp.vocab)
-# Build patterns from disease_list (ensure disease_list is defined/imported)
+# Build patterns from disease_list
 for d in disease_list:
     tokens = [tok.lower() for tok in d.split()]
     pattern = [{"LOWER": t} for t in tokens]
@@ -435,7 +446,19 @@ def preprocess_image(image, target_size=(224, 224)):
     arr = img_to_array(image) / 255.0
     return np.expand_dims(arr, axis=0)
 
-# ─── Text Prediction Endpoint ────────────────────────────────────────────────
+# ─── New Medicine Endpoint ────────────────────────────────────────────────────
+@app.route('/drugs/<string:name>', methods=['GET'])
+def get_drug_by_name(name):
+    # Case‐insensitive match; you can adjust to exact or regex
+    query = { 'name': { '$regex': f'^{name}$', '$options': 'i' } }
+    drug = drugs_collection.find_one(query)
+    if not drug:
+        abort(404, f"Drug '{name}' not found")
+    # Convert ObjectId to string for JSON serialization
+    drug['_id'] = str(drug['_id'])
+    return jsonify(drug), 200
+
+# ─── New Text Prediction Endpoint ────────────────────────────────────────────
 @app.route('/predict', methods=['POST'])
 def predict_disease():
     data = request.get_json(force=True)
