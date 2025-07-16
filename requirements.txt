@@ -1,7 +1,6 @@
 Flask
 flask-cors
 python-dotenv
-tensorflow==2.18.1
 numpy
 pillow
 spacy
